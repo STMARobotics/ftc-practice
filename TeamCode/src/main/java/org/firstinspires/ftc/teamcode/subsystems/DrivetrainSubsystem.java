@@ -1,11 +1,13 @@
 package org.firstinspires.ftc.teamcode.subsystems;
 
+import com.acmerobotics.dashboard.config.Config;
 import com.arcrobotics.ftclib.command.SubsystemBase;
-import com.arcrobotics.ftclib.drivebase.MecanumDrive;
 import com.arcrobotics.ftclib.geometry.Pose2d;
 import com.arcrobotics.ftclib.geometry.Rotation2d;
 import com.arcrobotics.ftclib.geometry.Translation2d;
+import com.arcrobotics.ftclib.hardware.motors.Motor;
 import com.arcrobotics.ftclib.hardware.motors.MotorEx;
+import com.arcrobotics.ftclib.kinematics.wpilibkinematics.ChassisSpeeds;
 import com.arcrobotics.ftclib.kinematics.wpilibkinematics.MecanumDriveKinematics;
 import com.arcrobotics.ftclib.kinematics.wpilibkinematics.MecanumDriveOdometry;
 import com.arcrobotics.ftclib.kinematics.wpilibkinematics.MecanumDriveWheelSpeeds;
@@ -20,15 +22,20 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 import java.util.Locale;
 
+@Config
 public class DrivetrainSubsystem extends SubsystemBase {
+    public static final double MAX_VELOCITY = 2.0;
+    public static final double MAX_ROTATION_VELOCITY = Math.PI;
     private static final double WHEEL_DIAMETER = 0.098; // 98mm
     private static final double DISTANCE_PER_REVOLUTION = Math.PI * WHEEL_DIAMETER ;
+    public static double kP = 1.0;
+    public static double kI = 0.0;
+    public static double kD = 0.0;
     private final MotorEx leftFrontMotor;
     private final MotorEx leftBackMotor;
     private final MotorEx rightFrontMotor;
     private final MotorEx rightBackMotor;
     private final BHI260IMU imu;
-    private final MecanumDrive mecanumDrive;
     private final MecanumDriveOdometry odometry;
     private final ElapsedTime timer = new ElapsedTime();
     private final Telemetry telemetry;
@@ -51,27 +58,24 @@ public class DrivetrainSubsystem extends SubsystemBase {
         imu.initialize(imuParameters);
 
         // Create the drive motors
-        leftFrontMotor  = new MotorEx(hardwareMap, "left_front_drive");
-        leftBackMotor  = new MotorEx(hardwareMap,"left_back_drive");
-        rightFrontMotor = new MotorEx(hardwareMap, "right_front_drive");
-        rightBackMotor = new MotorEx(hardwareMap, "right_back_drive");
-
-        double distancePerPulse = DISTANCE_PER_REVOLUTION / leftFrontMotor.getCPR();
-        leftFrontMotor.setDistancePerPulse(-distancePerPulse);
-        leftBackMotor.setDistancePerPulse(-distancePerPulse);
-        rightFrontMotor.setDistancePerPulse(distancePerPulse);
-        rightBackMotor.setDistancePerPulse(distancePerPulse);
-        leftFrontMotor.resetEncoder();
-        leftBackMotor.resetEncoder();
-        rightFrontMotor.resetEncoder();
-        rightBackMotor.resetEncoder();
-
-        // Create the drive object with the motors
-        mecanumDrive = new MecanumDrive(
-                leftFrontMotor, rightFrontMotor, leftBackMotor, rightBackMotor);
+        leftFrontMotor = configureMotor(hardwareMap, "left_front_drive", true);
+        leftBackMotor = configureMotor(hardwareMap,"left_back_drive", true);
+        rightFrontMotor = configureMotor(hardwareMap, "right_front_drive", false);
+        rightBackMotor = configureMotor(hardwareMap, "right_back_drive", false);
 
         // Create the odometry object that will track the robot's pose on the field
         odometry = new MecanumDriveOdometry(kinematics, getGyroAngle(), new Pose2d());
+    }
+
+    private static MotorEx configureMotor(HardwareMap hardwareMap, String name, boolean inverted) {
+        MotorEx motor = new MotorEx(hardwareMap, name);
+        motor.setRunMode(Motor.RunMode.VelocityControl);
+        motor.setVeloCoefficients(kP, kI, kD);
+
+        double distancePerPulse = (DISTANCE_PER_REVOLUTION / motor.getCPR()) * (inverted ? -1 : 1);
+        motor.setDistancePerPulse(distancePerPulse);
+        motor.resetEncoder();
+        return motor;
     }
 
     @Override
@@ -109,18 +113,33 @@ public class DrivetrainSubsystem extends SubsystemBase {
      * @param strafeSpeed
      * @param forwardSpeed
      * @param rotation
-     * @param squareInputs
      */
-    public void driveRobotCentric(
-            double strafeSpeed, double forwardSpeed, double rotation, boolean squareInputs) {
-        mecanumDrive.driveRobotCentric(strafeSpeed, forwardSpeed, rotation, squareInputs);
+    public void driveRobotCentric(double strafeSpeed, double forwardSpeed, double rotation) {
+        drive(new ChassisSpeeds(forwardSpeed, strafeSpeed, rotation));
     }
 
     public void driveFieldCentric(
-            double strafeSpeed, double forwardSpeed, double rotation, boolean squareInputs) {
+            double strafeSpeed, double forwardSpeed, double rotation) {
+        ChassisSpeeds chassisSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(
+                forwardSpeed, strafeSpeed, rotation, getGyroAngle());
+        drive(chassisSpeeds);
+    }
 
-        mecanumDrive.driveFieldCentric(
-                strafeSpeed, forwardSpeed, rotation, getGyroAngle().getDegrees(), squareInputs);
+    public void drive(ChassisSpeeds chassisSpeeds) {
+        MecanumDriveWheelSpeeds wheelSpeeds = kinematics.toWheelSpeeds(chassisSpeeds);
+
+        leftFrontMotor.set(metersPerSecToTicksPerSec(
+                wheelSpeeds.frontLeftMetersPerSecond, leftFrontMotor.getCPR()));
+        leftBackMotor.set(metersPerSecToTicksPerSec(
+                wheelSpeeds.rearLeftMetersPerSecond, leftBackMotor.getCPR()));
+        rightFrontMotor.set(metersPerSecToTicksPerSec(
+                wheelSpeeds.frontRightMetersPerSecond, rightFrontMotor.getCPR()));
+        rightBackMotor.set(metersPerSecToTicksPerSec(
+                wheelSpeeds.rearRightMetersPerSecond, rightBackMotor.getCPR()));
+    }
+
+    private double metersPerSecToTicksPerSec(double metersPerSec, double ticksPerRev) {
+        return (metersPerSec / DISTANCE_PER_REVOLUTION) * ticksPerRev;
     }
 
     public Pose2d getPose() {
