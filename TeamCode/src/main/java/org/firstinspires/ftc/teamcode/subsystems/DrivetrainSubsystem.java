@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode.subsystems;
 
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.arcrobotics.ftclib.command.SubsystemBase;
 import com.arcrobotics.ftclib.drivebase.MecanumDrive;
 import com.arcrobotics.ftclib.geometry.Pose2d;
@@ -31,7 +33,7 @@ public class DrivetrainSubsystem extends SubsystemBase {
     private final MecanumDrive mecanumDrive;
     private final MecanumDriveOdometry odometry;
     private final ElapsedTime timer = new ElapsedTime();
-    private final Telemetry telemetry;
+    private final MultipleTelemetry telemetry;
     private final MecanumDriveKinematics kinematics = new MecanumDriveKinematics(
             new Translation2d(0.1275,0.205),
             new Translation2d(0.1275, -0.205),
@@ -39,7 +41,7 @@ public class DrivetrainSubsystem extends SubsystemBase {
             new Translation2d(-0.1275, -0.205));
 
     public DrivetrainSubsystem(HardwareMap hardwareMap, Telemetry telemetry) {
-        this.telemetry = telemetry;
+        this.telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
         // Create the IMU / gyro to read the robot's angle
         IMU.Parameters imuParameters = new IMU.Parameters(
                 new RevHubOrientationOnRobot(
