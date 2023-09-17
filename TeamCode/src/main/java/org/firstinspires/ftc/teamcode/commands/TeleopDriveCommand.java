@@ -23,7 +23,7 @@ public class TeleopDriveCommand extends CommandBase {
     @Override
     public void execute() {
         double strafeSpeed = modifyAxis(-gamepad.getLeftX()) * MAX_VELOCITY;
-        double forwardSpeed = modifyAxis(-gamepad.getLeftY()) * MAX_VELOCITY;
+        double forwardSpeed = modifyAxis(gamepad.getLeftY()) * MAX_VELOCITY;
         double rotation = modifyAxis(-gamepad.getRightX()) * MAX_ROTATION_VELOCITY;
 
         drivetrainSubsystem.driveFieldCentric(strafeSpeed, forwardSpeed, rotation);
@@ -41,7 +41,7 @@ public class TeleopDriveCommand extends CommandBase {
      */
     private static double modifyAxis(double value) {
         double abs = Math.abs(value);
-        if (abs > 0.5) {
+        if (abs > 0.05) {
             return value * abs;
         }
         return 0.0;

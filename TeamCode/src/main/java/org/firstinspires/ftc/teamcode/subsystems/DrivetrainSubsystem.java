@@ -26,13 +26,15 @@ import java.util.Locale;
 
 @Config
 public class DrivetrainSubsystem extends SubsystemBase {
-    public static final double MAX_VELOCITY = 2.0;
-    public static final double MAX_ROTATION_VELOCITY = Math.PI;
+    public static final double MAX_VELOCITY = 0.65;
+    public static final double MAX_ROTATION_VELOCITY = Math.PI / 2;
     private static final double WHEEL_DIAMETER = 0.098; // 98mm
     private static final double DISTANCE_PER_REVOLUTION = Math.PI * WHEEL_DIAMETER ;
-    public static double kP = 1.0;
+    public static double kP = 1.1;
     public static double kI = 0.0;
     public static double kD = 0.0;
+    public static double kS = 1.0;
+    public static double kV = 2.8;
     private final MotorEx leftFrontMotor;
     private final MotorEx leftBackMotor;
     private final MotorEx rightFrontMotor;
@@ -74,8 +76,9 @@ public class DrivetrainSubsystem extends SubsystemBase {
         motor.setRunMode(Motor.RunMode.VelocityControl);
         motor.setVeloCoefficients(kP, kI, kD);
 
-        double distancePerPulse = (DISTANCE_PER_REVOLUTION / motor.getCPR()) * (inverted ? -1 : 1);
+        double distancePerPulse = (DISTANCE_PER_REVOLUTION / motor.getCPR());
         motor.setDistancePerPulse(distancePerPulse);
+        motor.setInverted(inverted);
         motor.resetEncoder();
         return motor;
     }
@@ -97,14 +100,15 @@ public class DrivetrainSubsystem extends SubsystemBase {
                 pose.getX(),
                 pose.getY(),
                 pose.getRotation().getDegrees()));
-        telemetry.addData("Left Front Rate", leftFrontMotor.getRate());
-        telemetry.addData("Right Front Rate", rightFrontMotor.getRate());
-        telemetry.addData("Left Back Rate", leftBackMotor.getRate());
-        telemetry.addData("Right Back Rate", rightBackMotor.getRate());
-        telemetry.addData("Left Front Distance", leftFrontMotor.getDistance());
-        telemetry.addData("Right Front Distance", rightFrontMotor.getDistance());
-        telemetry.addData("Left Back Distance", leftBackMotor.getDistance());
-        telemetry.addData("Right Back Distance", rightBackMotor.getDistance());
+        telemetry.addData("Rate Left Front", leftFrontMotor.getRate());
+        telemetry.addData("Rate Right Front", rightFrontMotor.getRate());
+        telemetry.addData("Rate Left Back", leftBackMotor.getRate());
+        telemetry.addData("Rate Right Back", rightBackMotor.getRate());
+        telemetry.addData("Distance Left Front", leftFrontMotor.getDistance());
+        telemetry.addData("Distance Right Front", rightFrontMotor.getDistance());
+        telemetry.addData("Distance Left Back", leftBackMotor.getDistance());
+        telemetry.addData("Distance Right Back", rightBackMotor.getDistance());
+        telemetry.addData("Rotation Velocity", imu.getRobotAngularVelocity(AngleUnit.RADIANS).zRotationRate);
         telemetry.addData("Time", timer.time());
         telemetry.addData("Heading", getGyroAngle().getDegrees());
         telemetry.update();
@@ -124,24 +128,26 @@ public class DrivetrainSubsystem extends SubsystemBase {
             double strafeSpeed, double forwardSpeed, double rotation) {
         ChassisSpeeds chassisSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(
                 forwardSpeed, strafeSpeed, rotation, getGyroAngle());
+
+        leftFrontMotor.setVeloCoefficients(kP, kI, kD);
+        leftBackMotor.setVeloCoefficients(kP, kI, kD);
+        rightFrontMotor.setVeloCoefficients(kP, kI, kD);
+        rightBackMotor.setVeloCoefficients(kP, kI, kD);
+        leftFrontMotor.setFeedforwardCoefficients(kS, kV);
+        leftBackMotor.setFeedforwardCoefficients(kS, kV);
+        rightFrontMotor.setFeedforwardCoefficients(kS, kV);
+        rightBackMotor.setFeedforwardCoefficients(kS, kV);
         drive(chassisSpeeds);
     }
 
     public void drive(ChassisSpeeds chassisSpeeds) {
         MecanumDriveWheelSpeeds wheelSpeeds = kinematics.toWheelSpeeds(chassisSpeeds);
+        wheelSpeeds.normalize(MAX_VELOCITY);
 
-        leftFrontMotor.set(metersPerSecToTicksPerSec(
-                wheelSpeeds.frontLeftMetersPerSecond, leftFrontMotor.getCPR()));
-        leftBackMotor.set(metersPerSecToTicksPerSec(
-                wheelSpeeds.rearLeftMetersPerSecond, leftBackMotor.getCPR()));
-        rightFrontMotor.set(metersPerSecToTicksPerSec(
-                wheelSpeeds.frontRightMetersPerSecond, rightFrontMotor.getCPR()));
-        rightBackMotor.set(metersPerSecToTicksPerSec(
-                wheelSpeeds.rearRightMetersPerSecond, rightBackMotor.getCPR()));
-    }
-
-    private double metersPerSecToTicksPerSec(double metersPerSec, double ticksPerRev) {
-        return (metersPerSec / DISTANCE_PER_REVOLUTION) * ticksPerRev;
+        leftFrontMotor.set(wheelSpeeds.frontLeftMetersPerSecond);
+        leftBackMotor.set(wheelSpeeds.rearLeftMetersPerSecond);
+        rightFrontMotor.set(wheelSpeeds.frontRightMetersPerSecond);
+        rightBackMotor.set(wheelSpeeds.rearRightMetersPerSecond);
     }
 
     public Pose2d getPose() {
